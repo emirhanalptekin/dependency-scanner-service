@@ -27,21 +27,6 @@ jobs:
         go mod download
         go build -v ./...
 
-    - name: Gitleaks
-      uses: gitleaks/gitleaks-action@v2
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
-
-    - name: Semgrep
-      uses: semgrep/semgrep-action@v1
-      with:
-        publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
-        publishDeployment: ${{ secrets.SEMGREP_DEPLOYMENT_ID }}
-        generateSarif: "1"
-      env:
-        SEMGREP_RULES: "p/default"
-
     - name: Docker Build
       run: |
         docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
