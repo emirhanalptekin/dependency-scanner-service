@@ -1,0 +1,73 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  security-scan-and-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Go Setup
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.23'
+
+    - name: Build Test
+      run: |
+        go mod download
+        go build -v ./...
+
+    - name: Gitleaks
+      uses: gitleaks/gitleaks-action@v2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+    - name: Semgrep
+      uses: semgrep/semgrep-action@v1
+      with:
+        publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+        publishDeployment: ${{ secrets.SEMGREP_DEPLOYMENT_ID }}
+        generateSarif: "1"
+      env:
+        SEMGREP_RULES: "p/default"
+
+    - name: Docker Build
+      run: |
+        docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+        docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
+
+    - name: Grype
+      uses: anchore/scan-action@v3
+      with:
+        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+        fail-build: false
+        severity-cutoff: high
+        acs-report-enable: true
+
+    - name: GitHub Security Advisory
+      uses: github/codeql-action/upload-sarif@v2
+      with:
+        sarif_file: ${{ steps.scan.outputs.sarif }}
+
+    - name: GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Docker Push
+      run: |
+        docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+        docker push ghcr.io/${{ github.repository }}:latest
