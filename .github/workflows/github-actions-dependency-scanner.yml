@@ -32,18 +32,6 @@ jobs:
         docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
         docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
 
-    - name: Grype
-      uses: anchore/scan-action@v3
-      with:
-        image: ghcr.io/${{ github.repository }}:${{ github.sha }}
-        fail-build: false
-        severity-cutoff: high
-        acs-report-enable: true
-
-    - name: GitHub Security Advisory
-      uses: github/codeql-action/upload-sarif@v3
-      with:
-        sarif_file: ${{ steps.scan.outputs.sarif }}
 
     - name: GitHub Container Registry
       uses: docker/login-action@v2
