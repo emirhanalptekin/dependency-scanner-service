@@ -2,57 +2,60 @@ package main
 
 import (
 	"bytes"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"time"
 
+	"github.com/go-git/go-git/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
 )
 
 type Scan struct {
-	ID          uuid.UUID  `json:"id"`
-	Target      string     `json:"target"`
-	ScanID      string     `json:"scan_id"`
-	Status      string     `json:"status"`
-	CreatedAt   time.Time  `json:"created_at"`
-	CompletedAt *time.Time `json:"completed_at"`
+	ID          uuid.UUID `gorm:"type:uuid;primary_key"`
+	Target      string    `gorm:"type:varchar(255);not null"`
+	ScanID      string    `gorm:"column:scan_id;type:varchar(255);not null;unique"`
+	Status      string    `gorm:"type:scan_status;not null"`
+	CreatedAt   time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
+	CompletedAt *time.Time
 }
 
 type ScanResult struct {
-	ID              uuid.UUID `json:"id"`
-	ScanID          uuid.UUID `json:"scan_id"`
-	VulnerabilityID string    `json:"vulnerability_id"`
-	Severity        string    `json:"severity"`
-	Description     string    `json:"description"`
-	Component       string    `json:"component"`
-	CreatedAt       time.Time `json:"created_at"`
+	ID              uuid.UUID `gorm:"type:uuid;primary_key"`
+	ScanID          uuid.UUID `gorm:"type:uuid;index"`
+	VulnerabilityID string    `gorm:"type:varchar(255);not null"`
+	Severity        string    `gorm:"type:vulnerability_severity;not null"`
+	Description     string    `gorm:"type:text;not null"`
+	Component       string    `gorm:"type:varchar(255);not null"`
+	CreatedAt       time.Time `gorm:"not null;default:CURRENT_TIMESTAMP"`
 }
 
 type StartScanRequest struct {
 	Target string `json:"target"`
 }
 
-var db *sql.DB
+var db *gorm.DB
 
 func init() {
 	var err error
-	host := os.Getenv("DB_HOST")
-	user := os.Getenv("DB_USER")
-	db_name := os.Getenv("DB_NAME")
-	password := os.Getenv("DB_PASSWORD")
+	dsn := fmt.Sprintf("host=%s user=%s dbname=%s password=%s port=5432 sslmode=disable",
+		os.Getenv("DB_HOST"),
+		os.Getenv("DB_USER"),
+		os.Getenv("DB_NAME"),
+		os.Getenv("DB_PASSWORD"))
 
-	connStr := fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable", user, password, host, db_name)
-	db, err = sql.Open("postgres", connStr)
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Fatal(err)
 	}
+
 }
 
 func startScan(w http.ResponseWriter, r *http.Request) {
@@ -70,41 +73,52 @@ func startScan(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: time.Now(),
 	}
 
+	if result := db.Create(&scan); result.Error != nil {
+		http.Error(w, result.Error.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	go func() {
-		cmd := exec.Command("dependency-check.sh", "--project", scan.Target, "--scan", req.Target, "--format", "JSON", "--out", "scan-result.json")
+		tempDir, err := os.MkdirTemp("", "repo-*")
+		if err != nil {
+			log.Printf("Error creating temp directory: %v", err)
+			updateScanStatus(scan.ID, "FAILED")
+			return
+		}
+		defer os.RemoveAll(tempDir)
 
-		var outb, errb bytes.Buffer
-		cmd.Stdout = &outb
-		cmd.Stderr = &errb
-
-		if err := cmd.Start(); err != nil {
-			log.Printf("Error starting scan: %v", err)
+		_, err = git.PlainClone(tempDir, false, &git.CloneOptions{
+			URL:      req.Target,
+			Progress: os.Stdout,
+		})
+		if err != nil {
+			log.Printf("Error cloning repository: %v", err)
 			updateScanStatus(scan.ID, "FAILED")
 			return
 		}
 
 		updateScanStatus(scan.ID, "IN_PROGRESS")
 
-		if err := cmd.Wait(); err != nil {
+		resultFile := fmt.Sprintf("scan-result-%s.json", scan.ScanID)
+		cmd := exec.Command("dependency-check.sh",
+			"--project", filepath.Base(req.Target),
+			"--scan", tempDir,
+			"--format", "JSON",
+			"--out", resultFile)
 
-			fmt.Println("out:", outb.String(), "err:", errb.String())
+		var outb, errb bytes.Buffer
+		cmd.Stdout = &outb
+		cmd.Stderr = &errb
 
-			log.Printf("Error completing scan: %v", err)
+		if err := cmd.Run(); err != nil {
+			log.Printf("Error running scan: %v\nStdout: %s\nStderr: %s",
+				err, outb.String(), errb.String())
 			updateScanStatus(scan.ID, "FAILED")
 			return
 		}
 
 		updateScanStatus(scan.ID, "COMPLETED")
 	}()
-
-	_, err := db.Exec(`
-        INSERT INTO scans (id, target, scan_id, status, created_at)
-        VALUES ($1, $2, $3, $4, $5)
-    `, scan.ID, scan.Target, scan.ScanID, scan.Status, scan.CreatedAt)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
 
 	json.NewEncoder(w).Encode(scan)
 }
@@ -114,75 +128,39 @@ func getScanStatus(w http.ResponseWriter, r *http.Request) {
 	scanID := vars["scanID"]
 
 	var scan Scan
-	var completedAt sql.NullTime
+	result := db.Where("scan_id = ?", scanID).First(&scan)
 
-	err := db.QueryRow(`
-        SELECT id, target, scan_id, status, created_at, completed_at
-        FROM scans WHERE scan_id = $1
-    `, scanID).Scan(&scan.ID, &scan.Target, &scan.ScanID, &scan.Status, &scan.CreatedAt, &completedAt)
-	if err != nil {
-		log.Printf("%v", err)
+	if result.Error != nil {
 		http.Error(w, "Scan not found", http.StatusNotFound)
 		return
-	}
-	if completedAt.Valid {
-		scan.CompletedAt = &completedAt.Time
 	}
 
 	json.NewEncoder(w).Encode(scan)
 }
 
 func saveScanResults(w http.ResponseWriter, r *http.Request) {
-	results := []ScanResult{}
-	// implement save mechanism
-
-	for _, result := range results {
-		_, err := db.Exec(`
-            INSERT INTO scan_results (id, scan_id, vulnerability_id, severity, description, component, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
-        `, uuid.New(), result.ScanID, result.VulnerabilityID, result.Severity, result.Description, result.Component, time.Now())
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-	}
-
+	// implement this
 	w.WriteHeader(http.StatusCreated)
 }
 
 func getScanResults(w http.ResponseWriter, r *http.Request) {
-	rows, err := db.Query(`
-        SELECT id, scan_id, vulnerability_id, severity, description, component, created_at
-        FROM scan_results
-    `)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer rows.Close()
-
 	var results []ScanResult
-	for rows.Next() {
-		var result ScanResult
-		err := rows.Scan(&result.ID, &result.ScanID, &result.VulnerabilityID, &result.Severity, &result.Description, &result.Component, &result.CreatedAt)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
-			return
-		}
-		results = append(results, result)
+	if result := db.Find(&results); result.Error != nil {
+		http.Error(w, "Failed to fetch scan results", http.StatusInternalServerError)
+		return
 	}
 
 	json.NewEncoder(w).Encode(results)
 }
 
 func updateScanStatus(scanID uuid.UUID, status string) {
-	_, err := db.Exec(`
-        UPDATE scans SET status = $1, completed_at = $2
-        WHERE id = $3 AND status != 'COMPLETED'
-    `, status, time.Now(), scanID)
-	if err != nil {
-		log.Printf("Error updating scan status: %v", err)
-	}
+	now := time.Now()
+	db.Model(&Scan{}).
+		Where("id = ? AND status != ?", scanID, "COMPLETED").
+		Updates(map[string]interface{}{
+			"status":       status,
+			"completed_at": now,
+		})
 }
 
 func main() {
