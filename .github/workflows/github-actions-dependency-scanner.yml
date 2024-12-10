@@ -44,20 +44,19 @@ jobs:
           go build -v ./...
         
       - name: Anchore Container Scan
+        id: scan
         uses: anchore/scan-action@v5.3.0
         with:
           fail-build: false
           severity-cutoff: high
           output-format: sarif
-
-      - name: Save Anchore scan results
-        run: |
-          cp ${{ steps.scan.outputs.sarif }} anchore-results.sarif
+        continue-on-error: true
             
       - name: Upload Anchore scan results to GitHub Security tab
+        if: success() || failure()
         uses: github/codeql-action/upload-sarif@v3
         with:
-          sarif_file: anchore-results.sarif
+          sarif_file: ${{ steps.scan.outputs.sarif }}
           category: anchore
       
       - name: Docker Build
