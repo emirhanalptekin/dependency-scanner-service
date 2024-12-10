@@ -1,5 +1,4 @@
 name: CI Pipeline
-
 on:
   push:
     branches: [ main ]
@@ -13,34 +12,68 @@ jobs:
       contents: read
       packages: write
       security-events: write
-
+    
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      
+      # Gitleaks scanning (updated to remove license requirement)
+      - name: Gitleaks Scan
+        uses: zricethezav/gitleaks-action@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        
+      # Semgrep scanning
+      - name: Semgrep Scan
+        uses: semgrep/semgrep-action@v1
+        with:
+          publishToken: ${{ secrets.SEMGREP_APP_TOKEN }}
+          publishDeployment: 1
+          generateSarif: "1"
+        env:
+          SEMGREP_RULES: p/default
 
-    - name: Go Setup
-      uses: actions/setup-go@v4
-      with:
-        go-version: '1.23'
-
-    - name: Build Test
-      run: |
-        go mod download
-        go build -v ./...
-
-    - name: Docker Build
-      run: |
-        docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
-        docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
-
-
-    - name: GitHub Container Registry
-      uses: docker/login-action@v2
-      with:
-        registry: ghcr.io
-        username: ${{ github.actor }}
-        password: ${{ secrets.GITHUB_TOKEN }}
-
-    - name: Docker Push
-      run: |
-        docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
-        docker push ghcr.io/${{ github.repository }}:latest
+      # Rest of the pipeline remains the same...
+      - name: Go Setup
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.23'
+          
+      - name: Build Test
+        run: |
+          go mod download
+          go build -v ./...
+      
+      - name: Docker Build
+        run: |
+          docker build -t ghcr.io/${{ github.repository }}:${{ github.sha }} .
+          docker tag ghcr.io/${{ github.repository }}:${{ github.sha }} ghcr.io/${{ github.repository }}:latest
+      
+      - name: Grype Container Scan
+        uses: anchore/scan-action@v3
+        with:
+          image: ghcr.io/${{ github.repository }}:${{ github.sha }}
+          fail-build: false
+          severity-cutoff: high
+          acs-report-enable: true
+          output-format: sarif
+          output-file: grype-results.sarif
+      
+      - name: Upload Grype scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: grype-results.sarif
+          category: container-vulnerability
+      
+      - name: GitHub Container Registry Login
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Docker Push
+        run: |
+          docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
+          docker push ghcr.io/${{ github.repository }}:latest

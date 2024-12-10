@@ -43,8 +43,8 @@ type StartScanRequest struct {
 
 var (
 	db         *gorm.DB
-	storageDir string = "/dependency-check/data/repos"   // Base directory for storing repositories
-	resultsDir string = "/dependency-check/data/results" // Directory for storing scan results
+	storageDir string = "/dependency-check/data/repos"
+	resultsDir string = "/dependency-check/data/results"
 )
 
 func init() {
@@ -60,7 +60,6 @@ func init() {
 		log.Fatal(err)
 	}
 
-	// Create necessary directories if they don't exist
 	for _, dir := range []string{storageDir, resultsDir} {
 		if err := os.MkdirAll(dir, 0755); err != nil {
 			log.Fatalf("Failed to create directory %s: %v", dir, err)
@@ -89,7 +88,6 @@ func startScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		// Create a unique directory for this scan within the persistent storage
 		repoDir := filepath.Join(storageDir, scan.ScanID)
 		if err := os.MkdirAll(repoDir, 0755); err != nil {
 			log.Printf("Error creating repository directory: %v", err)
@@ -97,7 +95,6 @@ func startScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Clone the repository into the persistent storage
 		_, err := git.PlainClone(repoDir, false, &git.CloneOptions{
 			URL:      req.Target,
 			Progress: os.Stdout,
