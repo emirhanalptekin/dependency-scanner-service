@@ -7,3 +7,4 @@ data:
   DB_USER: ""
   DB_NAME: ""
   DB_PASSWORD: ""
+  NVD_API_KEY: ""
