@@ -44,8 +44,8 @@ type StartScanRequest struct {
 
 var (
 	db         *gorm.DB
-	storageDir string = "/home/emir/Projects/dependency-scanner-service/dependency-check/data/repos"
-	resultsDir string = "/home/emir/Projects/dependency-scanner-service/dependency-check/data/results"
+	storageDir string = "/dependency-check/data/repos"
+	resultsDir string = "/dependency-check/data/results"
 )
 
 func init() {
