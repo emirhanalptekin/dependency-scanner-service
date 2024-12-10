@@ -1,0 +1,75 @@
+{
+  "info": {
+    "name": "Dependency Scanner API",
+    "description": "Collection for interacting with the Dependency Scanner Service",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Start New Scan",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n    \"target\": \"https://github.com/gothinkster/node-express-realworld-example-app\"\n}"
+        },
+        "url": {
+          "raw": "http://3.71.167.56:8080/api/scan/start",
+          "protocol": "http",
+          "host": ["3.71.167.56"],
+          "port": "8080",
+          "path": ["api", "scan", "start"]
+        },
+        "description": "Initiates a new dependency scan for a given repository"
+      }
+    },
+    {
+      "name": "Get Scan Status",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://3.71.167.56:8080/api/scan/status/23270e0a-4dc8-4a02-8115-009eec11653b",
+          "protocol": "http",
+          "host": ["3.71.167.56"],
+          "port": "8080",
+          "path": ["api", "scan", "status", "23270e0a-4dc8-4a02-8115-009eec11653b"]
+        },
+        "description": "Retrieves the current status of a specific scan"
+      }
+    },
+    {
+      "name": "Save Scan Results",
+      "request": {
+        "method": "POST",
+        "url": {
+          "raw": "http://3.71.167.56:8080/api/scan/save/23270e0a-4dc8-4a02-8115-009eec11653b",
+          "protocol": "http",
+          "host": ["3.71.167.56"],
+          "port": "8080",
+          "path": ["api", "scan", "save", "23270e0a-4dc8-4a02-8115-009eec11653b"]
+        },
+        "description": "Saves the results of a completed scan"
+      }
+    },
+    {
+      "name": "Get All Scan Results",
+      "request": {
+        "method": "GET",
+        "url": {
+          "raw": "http://3.71.167.56:8080/api/scan/results",
+          "protocol": "http",
+          "host": ["3.71.167.56"],
+          "port": "8080",
+          "path": ["api", "scan", "results"]
+        },
+        "description": "Retrieves all scan results from the database"
+      }
+    }
+  ]
+}

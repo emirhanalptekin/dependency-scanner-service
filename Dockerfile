@@ -28,5 +28,3 @@ ENV DC_DATA_DIRECTORY="/dependency-check/data"
 EXPOSE 8080
 
 CMD ["/app/main"]
-
-# think of a mechanism to store/refresh the cache of dependency-check
