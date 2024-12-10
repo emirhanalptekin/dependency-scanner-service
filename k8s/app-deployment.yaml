@@ -15,8 +15,16 @@ spec:
       containers:
         - name: dependency-scanner-service
           image: ghcr.io/emirhanalptekin/dependency-scanner-service:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8080
           envFrom:
             - configMapRef:
                 name: db-config
+          volumeMounts:
+          - name: nvd-cache
+            mountPath: /dependency-check/data
+      volumes:
+      - name: nvd-cache
+        persistentVolumeClaim:
+          claimName: nvd-cache-pvc

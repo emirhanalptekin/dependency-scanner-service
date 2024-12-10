@@ -41,7 +41,11 @@ type StartScanRequest struct {
 	Target string `json:"target"`
 }
 
-var db *gorm.DB
+var (
+	db         *gorm.DB
+	storageDir string = "/dependency-check/data/repos"   // Base directory for storing repositories
+	resultsDir string = "/dependency-check/data/results" // Directory for storing scan results
+)
 
 func init() {
 	var err error
@@ -56,6 +60,12 @@ func init() {
 		log.Fatal(err)
 	}
 
+	// Create necessary directories if they don't exist
+	for _, dir := range []string{storageDir, resultsDir} {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			log.Fatalf("Failed to create directory %s: %v", dir, err)
+		}
+	}
 }
 
 func startScan(w http.ResponseWriter, r *http.Request) {
@@ -79,15 +89,16 @@ func startScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	go func() {
-		tempDir, err := os.MkdirTemp("", "repo-*")
-		if err != nil {
-			log.Printf("Error creating temp directory: %v", err)
+		// Create a unique directory for this scan within the persistent storage
+		repoDir := filepath.Join(storageDir, scan.ScanID)
+		if err := os.MkdirAll(repoDir, 0755); err != nil {
+			log.Printf("Error creating repository directory: %v", err)
 			updateScanStatus(scan.ID, "FAILED")
 			return
 		}
-		defer os.RemoveAll(tempDir)
 
-		_, err = git.PlainClone(tempDir, false, &git.CloneOptions{
+		// Clone the repository into the persistent storage
+		_, err := git.PlainClone(repoDir, false, &git.CloneOptions{
 			URL:      req.Target,
 			Progress: os.Stdout,
 		})
@@ -99,10 +110,11 @@ func startScan(w http.ResponseWriter, r *http.Request) {
 
 		updateScanStatus(scan.ID, "IN_PROGRESS")
 
-		resultFile := fmt.Sprintf("scan-result-%s.json", scan.ScanID)
+		resultFile := filepath.Join(resultsDir, fmt.Sprintf("scan-result-%s.json", scan.ScanID))
 		cmd := exec.Command("dependency-check.sh",
 			"--project", filepath.Base(req.Target),
-			"--scan", tempDir,
+			"--scan", repoDir,
+			"--nvdApiKey", os.Getenv("NVD_API_KEY"),
 			"--format", "JSON",
 			"--out", resultFile)
 

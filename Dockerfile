@@ -23,7 +23,7 @@ RUN apk --no-cache add openjdk11-jre
 
 ENV PATH="/dependency-check/bin:${PATH}"
 ENV JAVA_HOME="/usr/lib/jvm/java-11-openjdk"
-ENV DC_DATA_DIRECTORY="/usr/share/dependency-check/data"
+ENV DC_DATA_DIRECTORY="/dependency-check/data"
 
 EXPOSE 8080
 
