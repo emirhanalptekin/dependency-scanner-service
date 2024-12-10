@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-git/go-git/v5"
@@ -43,8 +44,8 @@ type StartScanRequest struct {
 
 var (
 	db         *gorm.DB
-	storageDir string = "/dependency-check/data/repos"
-	resultsDir string = "/dependency-check/data/results"
+	storageDir string = "/home/emir/Projects/dependency-scanner-service/dependency-check/data/repos"
+	resultsDir string = "/home/emir/Projects/dependency-scanner-service/dependency-check/data/results"
 )
 
 func init() {
@@ -148,7 +149,90 @@ func getScanStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveScanResults(w http.ResponseWriter, r *http.Request) {
-	// implement this
+	vars := mux.Vars(r)
+	scanID := vars["scanID"]
+
+	var scan Scan
+	if result := db.Where("scan_id = ?", scanID).First(&scan); result.Error != nil {
+		http.Error(w, "Scan not found", http.StatusNotFound)
+		return
+	}
+
+	resultFile := filepath.Join(resultsDir, fmt.Sprintf("scan-result-%s.json", scanID))
+	resultData, err := os.ReadFile(resultFile)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Error reading results file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	var results struct {
+		Dependencies []struct {
+			Vulnerabilities []struct {
+				Name        string `json:"name"`
+				Severity    string `json:"severity"`
+				Description string `json:"description"`
+				Source      string `json:"source"`
+				References  []struct {
+					Source string `json:"source"`
+					URL    string `json:"url"`
+					Name   string `json:"name"`
+				} `json:"references"`
+			} `json:"vulnerabilities"`
+			FileName string `json:"fileName"`
+		} `json:"dependencies"`
+	}
+
+	if err := json.Unmarshal(resultData, &results); err != nil {
+		http.Error(w, fmt.Sprintf("Error parsing results: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	tx := db.Begin()
+	if tx.Error != nil {
+		http.Error(w, fmt.Sprintf("Error starting transaction: %v", tx.Error), http.StatusInternalServerError)
+		return
+	}
+
+	for _, dep := range results.Dependencies {
+		for _, vuln := range dep.Vulnerabilities {
+
+			severity := strings.ToUpper(vuln.Severity)
+			if severity == "" {
+				severity = "LOW"
+			}
+
+			scanResult := ScanResult{
+				ID:              uuid.New(),
+				ScanID:          scan.ID,
+				VulnerabilityID: vuln.Name,
+				Severity:        severity,
+				Description:     vuln.Description,
+				Component:       dep.FileName,
+				CreatedAt:       time.Now(),
+			}
+
+			if err := tx.Create(&scanResult).Error; err != nil {
+				tx.Rollback()
+				http.Error(w, fmt.Sprintf("Error saving scan result: %v", err), http.StatusInternalServerError)
+				return
+			}
+		}
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		http.Error(w, fmt.Sprintf("Error committing transaction: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := db.Model(&scan).Updates(map[string]interface{}{
+		"status":       "COMPLETED",
+		"completed_at": time.Now(),
+	}).Error; err != nil {
+		http.Error(w, fmt.Sprintf("Error updating scan status: %v", err), http.StatusInternalServerError)
+		return
+	}
+
 	w.WriteHeader(http.StatusCreated)
 }
 
@@ -176,7 +260,7 @@ func main() {
 	router := mux.NewRouter()
 	router.HandleFunc("/api/scan/start", startScan).Methods("POST")
 	router.HandleFunc("/api/scan/status/{scanID}", getScanStatus).Methods("GET")
-	router.HandleFunc("/api/scan/save", saveScanResults).Methods("POST")
+	router.HandleFunc("/api/scan/save/{scanID}", saveScanResults).Methods("POST")
 	router.HandleFunc("/api/scan/results", getScanResults).Methods("GET")
 
 	log.Fatal(http.ListenAndServe(":8080", router))

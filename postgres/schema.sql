@@ -1,5 +1,5 @@
 CREATE TYPE scan_status AS ENUM ('QUEUED', 'IN_PROGRESS', 'COMPLETED', 'FAILED');
-CREATE TYPE vulnerability_severity AS ENUM ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL');
+CREATE TYPE vulnerability_severity AS ENUM ('LOW','MEDIUM', 'MODERATE', 'HIGH', 'CRITICAL');
 
 CREATE TABLE scans (
     id UUID PRIMARY KEY,
