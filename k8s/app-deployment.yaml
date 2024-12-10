@@ -1,0 +1,22 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dependency-scanner-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dependency-scanner-service
+  template:
+    metadata:
+      labels:
+        app: dependency-scanner-service
+    spec:
+      containers:
+        - name: dependency-scanner-service
+          image: ghcr.io/emirhanalptekin/dependency-scanner-service:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: db-config

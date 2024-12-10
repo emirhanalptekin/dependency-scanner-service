@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 
@@ -42,7 +43,12 @@ var db *sql.DB
 
 func init() {
 	var err error
-	connStr := "postgres://postgres:postgres@192.168.0.9:5432/dependency_check?sslmode=disable"
+	host := os.Getenv("DB_HOST")
+	user := os.Getenv("DB_USER")
+	db_name := os.Getenv("DB_NAME")
+	password := os.Getenv("DB_PASSWORD")
+
+	connStr := fmt.Sprintf("postgres://%s:%s@%s:5432/%s?sslmode=disable", user, password, host, db_name)
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
 		log.Fatal(err)
