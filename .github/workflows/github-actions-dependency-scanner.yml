@@ -28,7 +28,7 @@ jobs:
           docker run --rm -v ${PWD}:/path zricethezav/gitleaks:latest detect --source="/path" --report-format=sarif --report-path=/path/gitleaks-results.sarif
           
       - name: Upload Gitleaks SARIF report
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: gitleaks-results.sarif
           category: gitleaks
@@ -49,10 +49,13 @@ jobs:
           fail-build: false
           severity-cutoff: high
           output-format: sarif
-          output-file: anchore-results.sarif
+
+      - name: Save Anchore scan results
+        run: |
+          cp ${{ steps.scan.outputs.sarif }} anchore-results.sarif
             
       - name: Upload Anchore scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v2
+        uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: anchore-results.sarif
           category: anchore

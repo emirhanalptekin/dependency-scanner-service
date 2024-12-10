@@ -15,7 +15,7 @@ jobs:
     name: semgrep/ci
     runs-on: ubuntu-20.04
     permissions:
-      security-events: write  # Required for GitHub Security tab
+      security-events: write
       contents: read
     env:
       SEMGREP_APP_TOKEN: ${{ secrets.SEMGREP_APP_TOKEN }}
@@ -25,7 +25,7 @@ jobs:
     - uses: actions/checkout@v4
     - run: semgrep ci --sarif > semgrep.sarif
     - name: Upload SARIF file to GitHub Security tab
-      uses: github/codeql-action/upload-sarif@v2
+      uses: github/codeql-action/upload-sarif@v3
       with:
         sarif_file: semgrep.sarif
         category: semgrep
